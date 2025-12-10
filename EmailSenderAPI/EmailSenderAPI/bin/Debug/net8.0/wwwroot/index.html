@@ -1,0 +1,322 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Служба погодных уведомлений</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 500px;
+            overflow: hidden;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+            .header h1 {
+                font-size: 24px;
+                margin-bottom: 5px;
+            }
+
+            .header p {
+                opacity: 0.8;
+                font-size: 14px;
+            }
+
+        .content {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+            input:focus, select:focus {
+                outline: none;
+                border-color: #3498db;
+            }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+            .btn:hover {
+                background: #2980b9;
+            }
+
+            .btn:disabled {
+                background: #95a5a6;
+                cursor: not-allowed;
+            }
+
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            display: none;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            text-align: center;
+            color: #7f8c8d;
+            display: none;
+        }
+
+        .city-option {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+        }
+
+        .city-temp {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌤️ Служба погодных уведомлений</h1>
+            <p>Получите прогноз погоды на свою почту</p>
+        </div>
+
+        <div class="content">
+            <form id="weatherForm">
+                <div class="form-group">
+                    <label for="email">📧 Ваш email:</label>
+                    <input type="email" id="email" placeholder="example@mail.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="city">🏙️ Выберите город:</label>
+                    <select id="city" required>
+                        <option value="">-- Выберите город --</option>
+                        <!-- Города загружаются из API -->
+                    </select>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">
+                    📨 Получить прогноз
+                </button>
+            </form>
+
+            <div class="loading" id="loading">
+                Отправка запроса...
+            </div>
+
+            <div class="message" id="message"></div>
+        </div>
+    </div>
+
+    <script>
+        // Настройки
+        const WEATHER_API_URL = 'https://localhost:7101';
+        const EMAIL_API_URL = 'http://localhost:7200';
+
+        // Элементы
+        const form = document.getElementById('weatherForm');
+        const citySelect = document.getElementById('city');
+        const loading = document.getElementById('loading');
+        const message = document.getElementById('message');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // Загружаем города при запуске
+        window.onload = async () => {
+            await loadCities();
+        };
+
+        // Загружаем список городов из Weather API
+        async function loadCities() {
+            try {
+                const response = await fetch(`${WEATHER_API_URL}/api/Weather`);
+                if (!response.ok) throw new Error('API не отвечает');
+
+                const cities = await response.json();
+
+                // Очищаем список
+                citySelect.innerHTML = '<option value="">-- Выберите город --</option>';
+
+                // Добавляем города
+                cities.forEach(city => {
+                    const option = document.createElement('option');
+                    option.value = city.city;
+                    option.textContent = `${city.city} (${city.temperatureC}°C)`;
+                    citySelect.appendChild(option);
+                });
+
+            } catch (error) {
+                showError('Не удалось загрузить список городов');
+                console.error(error);
+            }
+        }
+
+        // Обработка отправки формы
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email = document.getElementById('email').value.trim();
+            const city = citySelect.value;
+
+            // Простая валидация
+            if (!email || !city) {
+                showError('Заполните все поля');
+                return;
+            }
+
+            // Проверка email
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                showError('Введите корректный email');
+                return;
+            }
+
+            // Показываем загрузку
+            showLoading();
+
+            try {
+                // 1. Получаем прогноз погоды для города
+                const weatherResponse = await fetch(`${WEATHER_API_URL}/api/Weather/${encodeURIComponent(city)}`);
+
+                if (!weatherResponse.ok) {
+                    throw new Error('Прогноз для этого города не найден');
+                }
+
+                const weatherData = await weatherResponse.json();
+
+                // 2. Формируем текст письма
+                const emailBody = `
+                    <h2>Прогноз погоды для ${weatherData.city}</h2>
+                    <p><strong>Температура:</strong> ${weatherData.temperatureC}°C</p>
+                    <p><strong>Описание:</strong> ${weatherData.summary}</p>
+                    <p><strong>Влажность:</strong> ${weatherData.humidity}%</p>
+                    <p><strong>Ветер:</strong> ${weatherData.windSpeed} м/с</p>
+                    <p><strong>Дата:</strong> ${new Date(weatherData.date).toLocaleString('ru-RU')}</p>
+                    <hr>
+                    <p>Служба погодных уведомлений</p>
+                `;
+
+                // 3. Отправляем письмо через Email API
+                const emailRequest = {
+                    toEmail: email,
+                    subject: `Прогноз погоды для ${weatherData.city}`,
+                    body: emailBody
+                };
+
+                const emailResponse = await fetch(`${EMAIL_API_URL}/api/Gmail/send-with-fallback`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(emailRequest)
+                });
+
+                const emailResult = await emailResponse.json();
+
+                if (emailResult.success) {
+                    showSuccess('Прогноз отправлен на вашу почту!');
+                    form.reset();
+                } else {
+                    showError(emailResult.message || 'Ошибка при отправке письма');
+                }
+
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                hideLoading();
+            }
+        });
+
+        // Функции для отображения сообщений
+        function showLoading() {
+            loading.style.display = 'block';
+            message.style.display = 'none';
+            submitBtn.disabled = true;
+        }
+
+        function hideLoading() {
+            loading.style.display = 'none';
+            submitBtn.disabled = false;
+        }
+
+        function showSuccess(text) {
+            message.className = 'message success';
+            message.textContent = text;
+            message.style.display = 'block';
+
+            // Автоматически скрыть через 5 секунд
+            setTimeout(() => {
+                message.style.display = 'none';
+            }, 5000);
+        }
+
+        function showError(text) {
+            message.className = 'message error';
+            message.textContent = text;
+            message.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
